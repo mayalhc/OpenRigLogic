@@ -1,0 +1,17 @@
+---
+Checks: >
+  *,
+  clang-diagnostic-*,
+  clang-analyzer-*,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -fuchsia-default-arguments,
+  -fuchsia-overloaded-operator,
+  -google-runtime-references,
+  -llvm-header-guard,
+  -modernize-use-trailing-return-type,
+  -readability-uppercase-literal-suffix,
+  -hicpp-uppercase-literal-suffix,
+  -llvmlibc-callee-namespace
+HeaderFilterRegex: '(src/|tests/).*'
+...
+

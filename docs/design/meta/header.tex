@@ -1,0 +1,15 @@
+\usepackage[linesnumbered,ruled,lined]{algorithm2e}
+
+\let\oldnl\nl% Store \nl in \oldnl
+\newcommand{\nonl}{\renewcommand{\nl}{\let\nl\oldnl}}% Remove line number for one line
+
+\newlength\inputLen
+\newcommand\NextIn[1]{%
+  \nonl%
+  \settowidth\inputLen{\KwIn{}}%
+  \setlength\hangindent{\inputLen}%
+  \hspace*{\inputLen}#1\\}
+
+\SetKw{KwBy}{by}
+
+\setlength{\columnsep}{20pt}

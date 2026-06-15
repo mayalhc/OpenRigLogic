@@ -1,0 +1,76 @@
+name: CMake on multiple platforms
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: true
+
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        build_type: [Release]
+        c_compiler: [gcc, clang, cl]
+        include:
+          - os: windows-latest
+            c_compiler: cl
+            cpp_compiler: cl
+          - os: ubuntu-latest
+            c_compiler: gcc
+            cpp_compiler: g++
+          - os: ubuntu-latest
+            c_compiler: clang
+            cpp_compiler: clang++
+        exclude:
+          - os: windows-latest
+            c_compiler: gcc
+          - os: windows-latest
+            c_compiler: clang
+          - os: ubuntu-latest
+            c_compiler: cl
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set reusable strings
+      id: strings
+      shell: bash
+      run: |
+        echo "build-output-dir=${{ github.workspace }}/build" >> "$GITHUB_OUTPUT"
+
+    - name: Add MSVC runtime DLLs to PATH (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+        $vsRoot = & $vswhere -latest -property installationPath
+        $msvcVer = (Get-Content "$vsRoot\VC\Auxiliary\Build\Microsoft.VCToolsVersion.default.txt").Trim()
+        "$vsRoot\VC\Tools\MSVC\$msvcVer\bin\Hostx64\x64" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+
+    - name: Configure CMake
+      run: >
+        cmake -B ${{ steps.strings.outputs.build-output-dir }}
+        -DCMAKE_CXX_COMPILER=${{ matrix.cpp_compiler }}
+        -DCMAKE_C_COMPILER=${{ matrix.c_compiler }}
+        -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+        -DREAD_ONLY_SOURCE_TREE=ON
+        -DTREAT_WARNINGS_AS_ERRORS=ON
+        -DENABLE_SANITIZERS="address,leak,undefined"
+        -DRL_BUILD_WITH_HALF_FLOATS=ON
+        -DRL_BUILD_WITH_SSE=ON
+        -DRL_BUILD_WITH_AVX=ON
+        -DRL_BUILD_BENCHMARKS=OFF
+        -S ${{ github.workspace }}
+
+    - name: Build
+      run: cmake --build ${{ steps.strings.outputs.build-output-dir }} --config ${{ matrix.build_type }}
+
+    - name: Test
+      working-directory: ${{ steps.strings.outputs.build-output-dir }}
+      run: ctest --build-config ${{ matrix.build_type }} --output-on-failure --verbose

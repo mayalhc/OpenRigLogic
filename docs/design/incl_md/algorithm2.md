@@ -1,0 +1,1 @@
+![Algorithm 2](resources/alg2.svg "Evaluate Linear Outputs")

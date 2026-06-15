@@ -1,0 +1,6 @@
+---
+classoption: a4paper,twocolumn
+documentclass: article
+geometry: "left=0.75in,right=0.75in,top=0.75in,bottom=0.75in"
+papersize: a4
+---

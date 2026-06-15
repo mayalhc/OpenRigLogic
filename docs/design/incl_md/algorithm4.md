@@ -1,0 +1,1 @@
+![Algorithm 4](resources/alg4.svg "Evaluate Linear Outputs(Vectorized)")

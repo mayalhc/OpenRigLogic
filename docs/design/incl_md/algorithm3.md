@@ -1,0 +1,1 @@
+![Algorithm 3](resources/alg3.svg "Evaluate Conditional Dependent Outputs")
