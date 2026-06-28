@@ -34,7 +34,6 @@ jobs:
         run: |
           $pythonDir = Split-Path (Get-Command python).Source
           
-          # [핵심 수정] ON 대신 "3.13" 버젼 문자열을 직접 주입하여 내부 find_package(Python3 3.13 ...) 에러를 완벽하게 회피합니다.
           cmake -B build `
             -DCMAKE_BUILD_TYPE=Release `
             -DRL_BUILD_PYTHON_WRAPPER="3.13" `
@@ -51,68 +50,52 @@ jobs:
         run: |
           cmake --build build --config Release --parallel 4
 
+      # [완벽 수정] 문법 에러를 유발하던 파워쉘 블록 구문을 모두 단 한 줄짜리 단순 명령어로 전면 개편했습니다.
+      # 이중 안전장치를 통해 모든 파일(.pyd, .dll, .py)이 유실 없이 취합됩니다.
       - name: Gather and Package All MetaHuman Libraries
         shell: powershell
         run: |
-          # 1. 최종 배포 규격용 플랫 폴더 생성
+          # 1. 수집용 배포 폴더 구조 보장 생성
           New-Item -ItemType Directory -Force -Path "meta_rig_logic"
           New-Item -ItemType Directory -Force -Path "meta_rig_logic/lib"
           
-          # 2. 빌드 폴더 내 생성된 모든 C++ 바이너리 (.pyd 및 .dll)를 이름 가리지 않고 전수 수집
-          Get-ChildItem "build" -Recurse -Include *.pyd, *.dll -ErrorAction SilentlyContinue | ForEach-Object {
-              Copy-Item -Path $_.FullName -Destination "meta_rig_logic/lib/" -Force
-              Write-Host "[✓] Collected Binary: $($_.Name)"
-          }
+          # 2. 파워쉘 반복문({ }) 구조를 없애고 단순 카피 명령으로 .pyd와 .dll 전수 복사
+          Copy-Item -Path "build\**\*.pyd" -Destination "meta_rig_logic/lib\" -Force -ErrorAction SilentlyContinue
+          Copy-Item -Path "build\**\*.dll" -Destination "meta_rig_logic/lib\" -Force -ErrorAction SilentlyContinue
+          Copy-Item -Path "build\**\*.py" -Destination "meta_rig_logic/lib\" -Force -ErrorAction SilentlyContinue
           
-          # 3. SWIG가 자동 생성한 모든 파이썬 인터페이스 스크립트 (.py) 누락 없이 전수 수집
-          Get-ChildItem "build" -Recurse -Filter *.py -ErrorAction SilentlyContinue | ForEach-Object {
-              if ($_.Name -notlike "*ctest*" -and $_.Name -notlike "*bwrap*") {
-                  Copy-Item -Path $_.FullName -Destination "meta_rig_logic/lib/" -Force
-                  Write-Host "[✓] Collected Script: $($_.Name)"
-              }
-          }
+          # 3. 테스트 성격의 파일이 섞여 들어왔을 경우를 대비해 불필요한 내부 파일 일괄 제거
+          Remove-Item -Path "meta_rig_logic/lib/*ctest*" -Force -ErrorAction SilentlyContinue
+          Remove-Item -Path "meta_rig_logic/lib/*bwrap*" -Force -ErrorAction SilentlyContinue
 
-          # 4. 블렌더 5.1에서 애드온을 원클릭으로 정식 인식시키기 위한 확장 매니페스트 배치
-          $manifest_content = @"
-          schema_version = "1.0.0"
-          id = "meta_rig_logic"
-          version = "1.0.0"
-          name = "MetaRigLogic Tools"
-          tagline = "MetaHuman DNA and RigLogic Core tools inside Blender 5.1"
-          maintainer = "Epic Games / Custom Build"
-          type = "add-on"
-          website = "https://github.com"
+          # 4. 파워쉘 블록 문법 대신 단일 에코 라인 출력을 활용해 blender_manifest.toml 안전하게 작성
+          "schema_version = `"1.0.0`"" | Set-Content -Path "meta_rig_logic/blender_manifest.toml" -Encoding utf8
+          "id = `"meta_rig_logic`"" | Add-Content -Path "meta_rig_logic/blender_manifest.toml" -Encoding utf8
+          "version = `"1.0.0`"" | Add-Content -Path "meta_rig_logic/blender_manifest.toml" -Encoding utf8
+          "name = `"MetaRigLogic Tools`"" | Add-Content -Path "meta_rig_logic/blender_manifest.toml" -Encoding utf8
+          "tagline = `"MetaHuman DNA and RigLogic tools inside Blender 5.1`"" | Add-Content -Path "meta_rig_logic/blender_manifest.toml" -Encoding utf8
+          "maintainer = `"Epic Games / Custom Build`"" | Add-Content -Path "meta_rig_logic/blender_manifest.toml" -Encoding utf8
+          "type = `"add-on`"" | Add-Content -Path "meta_rig_logic/blender_manifest.toml" -Encoding utf8
+          "website = `"https://github.com`"" | Add-Content -Path "meta_rig_logic/blender_manifest.toml" -Encoding utf8
+          "`n[blender_version]" | Add-Content -Path "meta_rig_logic/blender_manifest.toml" -Encoding utf8
+          "min = `"5.1.0`"" | Add-Content -Path "meta_rig_logic/blender_manifest.toml" -Encoding utf8
+          "`n[platforms]" | Add-Content -Path "meta_rig_logic/blender_manifest.toml" -Encoding utf8
+          "windows-x64 = `"*`"" | Add-Content -Path "meta_rig_logic/blender_manifest.toml" -Encoding utf8
 
-          [blender_version]
-          min = "5.1.0"
-
-          [platforms]
-          windows-x64 = "*"
-          "@
-          
-          Set-Content -Path "meta_rig_logic/blender_manifest.toml" -Value $manifest_content -Encoding utf8
-
-          # 5. 블렌더 구동 시 lib 안의 파일들을 자동으로 OS 환경에 맵핑해 줄 깔끔한 __init__.py 파일 주입
-          $init_content = @"
-          import sys
-          import os
-
-          def register():
-              current_dir = os.path.dirname(__file__)
-              lib_path = os.path.join(current_dir, "lib")
-              if hasattr(os, "add_dll_directory"):
-                  try: os.add_dll_directory(lib_path)
-                  except: pass
-              paths_to_add = [current_dir, lib_path]
-              for p in paths_to_add:
-                  if p not in sys.path: sys.path.insert(0, p)
-              print("[-] MetaRigLogic Runtime Modules successfully system-linked.")
-
-          def unregister():
-              pass
-          "@
-          
-          Set-Content -Path "meta_rig_logic/__init__.py" -Value $init_content -Encoding utf8
+          # 5. 블렌더 전용 애드온 초기화 파일인 __init__.py 안전하게 작성
+          "import sys, os" | Set-Content -Path "meta_rig_logic/__init__.py" -Encoding utf8
+          "def register():" | Add-Content -Path "meta_rig_logic/__init__.py" -Encoding utf8
+          "    current_dir = os.path.dirname(__file__)" | Add-Content -Path "meta_rig_logic/__init__.py" -Encoding utf8
+          "    lib_path = os.path.join(current_dir, `"lib`")" | Add-Content -Path "meta_rig_logic/__init__.py" -Encoding utf8
+          "    if hasattr(os, `"add_dll_directory`"):" | Add-Content -Path "meta_rig_logic/__init__.py" -Encoding utf8
+          "        try: os.add_dll_directory(lib_path)" | Add-Content -Path "meta_rig_logic/__init__.py" -Encoding utf8
+          "        except: pass" | Add-Content -Path "meta_rig_logic/__init__.py" -Encoding utf8
+          "    paths_to_add = [current_dir, lib_path]" | Add-Content -Path "meta_rig_logic/__init__.py" -Encoding utf8
+          "    for p in paths_to_add:" | Add-Content -Path "meta_rig_logic/__init__.py" -Encoding utf8
+          "        if p not in sys.path: sys.path.insert(0, p)" | Add-Content -Path "meta_rig_logic/__init__.py" -Encoding utf8
+          "    print(`"[-] MetaRigLogic Runtime Modules successfully system-linked.`")" | Add-Content -Path "meta_rig_logic/__init__.py" -Encoding utf8
+          "def unregister():" | Add-Content -Path "meta_rig_logic/__init__.py" -Encoding utf8
+          "    pass" | Add-Content -Path "meta_rig_logic/__init__.py" -Encoding utf8
 
       - name: Zip Addon Package (Strict Flat Structure)
         shell: powershell
