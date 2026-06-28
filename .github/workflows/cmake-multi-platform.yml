@@ -34,11 +34,10 @@ jobs:
         run: |
           $pythonDir = Split-Path (Get-Command python).Source
           
-          # -DRL_BUILD_PYTHON_WRAPPER=ON 으로 변경하여 SWIG 연동을 강제 활성화합니다.
-          # 파이썬 3.13 환경 매칭용 전역 매크로 플래그 주입
+          # [핵심 수정] ON 대신 "3.13" 버젼 문자열을 직접 주입하여 내부 find_package(Python3 3.13 ...) 에러를 완벽하게 회피합니다.
           cmake -B build `
             -DCMAKE_BUILD_TYPE=Release `
-            -DRL_BUILD_PYTHON_WRAPPER=ON `
+            -DRL_BUILD_PYTHON_WRAPPER="3.13" `
             -DRL_BUILD_TESTS=OFF `
             -DRL_BUILD_BENCHMARKS=OFF `
             -DRL_BUILD_EXAMPLES=OFF `
@@ -52,7 +51,6 @@ jobs:
         run: |
           cmake --build build --config Release --parallel 4
 
-      # [오류 수정 완료] 깨진 문자열 및 파워쉘 구문 닫힘 에러를 완전히 치료했습니다.
       - name: Gather and Package All MetaHuman Libraries
         shell: powershell
         run: |
