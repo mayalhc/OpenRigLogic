@@ -50,7 +50,7 @@ jobs:
         run: |
           cmake --build build --config Release --parallel 4
 
-      # [인코딩 버그 해결] 에러를 유발하던 이모지 \u2713와 한글 로그를 표준 영문(ASCII)으로 전면 교체했습니다.
+      # [튜플 인덱싱 버그 완벽 수정] os.path.splitext 결과값에서 확장자 문자열만 정확히 인덱싱([1])하도록 교정했습니다.
       - name: Gather All MetaHuman Libraries via Python Script
         shell: python
         run: |
@@ -58,7 +58,6 @@ jobs:
           import shutil
           import sys
 
-          # 출력 스트림 인코딩 방어책 강제 지정
           sys.stdout.reconfigure(encoding='utf-8')
 
           target_lib = os.path.abspath("meta_rig_logic/lib")
@@ -70,7 +69,8 @@ jobs:
           collected_count = 0
           for root, dirs, files in os.walk(build_root):
               for file in files:
-                  ext = os.path.splitext(file).lower()
+                  # [핵심 수정] [1]을 붙여 반환된 튜플 데이터 중 '확장자 문자열'에만 lower()가 작동하도록 수정했습니다.
+                  ext = os.path.splitext(file)[1].lower()
                   if ext in ['.pyd', '.dll', '.py']:
                       if "ctest" in file.lower() or "bwrap" in file.lower():
                           continue
@@ -79,7 +79,6 @@ jobs:
                       dest_file_path = os.path.join(target_lib, file)
                       
                       shutil.copy2(src_file_path, dest_file_path)
-                      # [수정] 이모지 제거 및 ASCII 포맷으로 윈도우 인코딩 크래시 방지
                       print(f"[SUCCESS] Collected: {file}")
                       collected_count += 1
                       
