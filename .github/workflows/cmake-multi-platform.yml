@@ -1,0 +1,128 @@
+name: Build OpenRigLogic Python (Complete Addon Bundle)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    name: Build RigLogic & DNA on Windows
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          lfs: true
+
+      # [수정] Python 버전을 3.11로 변경
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup MSVC Compiler Env
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install SWIG
+        shell: pwsh
+        run: |
+          choco install swig -y --no-progress
+          swig -version
+
+      # [수정] CMake 파이썬 래퍼 타겟 버전을 3.11로 변경
+      - name: Configure CMake
+        shell: pwsh
+        run: |
+          $pythonDir = Split-Path (Get-Command python).Source
+          
+          cmake -B build `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DRL_BUILD_PYTHON_WRAPPER="3.11" `
+            -DRL_BUILD_TESTS=OFF `
+            -DRL_BUILD_BENCHMARKS=OFF `
+            -DRL_BUILD_EXAMPLES=OFF `
+            -DBUILD_SHARED_LIBS=ON `
+            -DCMAKE_CXX_FLAGS="/EHsc /W0 /std:c++17 /MD /D_SWIG_NO_THREAD_FOR_PYTHON" `
+            -DPython_EXECUTABLE="$pythonDir\python.exe" `
+            -DPython_ROOT_DIR="$pythonDir"
+
+      - name: Build Component Modules
+        shell: pwsh
+        run: |
+          cmake --build build --config Release --parallel 4
+
+      - name: Gather All MetaHuman Libraries via Python Script
+        shell: python
+        run: |
+          import os
+          import shutil
+          import sys
+
+          sys.stdout.reconfigure(encoding='utf-8')
+
+          target_lib = os.path.abspath("meta_rig_logic/lib")
+          os.makedirs(target_lib, exist_ok=True)
+          
+          build_root = os.path.abspath("build")
+          print(f"[*] Scanning for compiled MetaHuman elements in: {build_root}")
+          
+          collected_count = 0
+          for root, dirs, files in os.walk(build_root):
+              for file in files:
+                  ext = os.path.splitext(file)[1].lower()
+                  if ext in ['.pyd', '.dll', '.py']:
+                      if "ctest" in file.lower() or "bwrap" in file.lower():
+                          continue
+                          
+                      src_file_path = os.path.join(root, file)
+                      dest_file_path = os.path.join(target_lib, file)
+                      
+                      shutil.copy2(src_file_path, dest_file_path)
+                      print(f"[SUCCESS] Collected: {file}")
+                      collected_count += 1
+                      
+          print(f"[*] Gathering done. Total files collected: {collected_count}")
+
+      # [수정] 태그라인의 블렌더 타겟 버전을 Python 3.11을 사용하는 Blender 4.2 LTS 기준으로 변경
+      - name: Generate Addon Manifest and Init
+        shell: powershell
+        run: |
+          "schema_version = `"1.0.0`"" | Set-Content -Path "meta_rig_logic/blender_manifest.toml" -Encoding utf8
+          "id = `"meta_rig_logic`"" | Add-Content -Path "meta_rig_logic/blender_manifest.toml" -Encoding utf8
+          "version = `"1.0.0`"" | Add-Content -Path "meta_rig_logic/blender_manifest.toml" -Encoding utf8
+          "name = `"MetaRigLogic Tools`"" | Add-Content -Path "meta_rig_logic/blender_manifest.toml" -Encoding utf8
+          "tagline = `"MetaHuman DNA and RigLogic tools inside Blender 4.2`"" | Add-Content -Path "meta_rig_logic/blender_manifest.toml" -Encoding utf8
+          "maintainer = `"Epic Games / Custom Build`"" | Add-Content -Path "meta_rig_logic/blender_manifest.toml" -Encoding utf8
+          "type = `"add-on`"" | Add-Content -Path "meta_rig_logic/blender_manifest.toml" -Encoding utf8
+          "website = `"https://github.com`"" | Add-Content -Path "meta_rig_logic/blender_manifest.toml" -Encoding utf8
+          "`n[blender_version]" | Add-Content -Path "meta_rig_logic/blender_manifest.toml" -Encoding utf8
+          "min = `"4.2.0`"" | Add-Content -Path "meta_rig_logic/blender_manifest.toml" -Encoding utf8
+          "`n[platforms]" | Add-Content -Path "meta_rig_logic/blender_manifest.toml" -Encoding utf8
+          "windows-x64 = `"*`"" | Add-Content -Path "meta_rig_logic/blender_manifest.toml" -Encoding utf8
+
+          "import sys, os" | Set-Content -Path "meta_rig_logic/__init__.py" -Encoding utf8
+          "def register():" | Add-Content -Path "meta_rig_logic/__init__.py" -Encoding utf8
+          "    current_dir = os.path.dirname(__file__)" | Add-Content -Path "meta_rig_logic/__init__.py" -Encoding utf8
+          "    lib_path = os.path.join(current_dir, `"lib`")" | Add-Content -Path "meta_rig_logic/__init__.py" -Encoding utf8
+          "    if hasattr(os, `"add_dll_directory`"):" | Add-Content -Path "meta_rig_logic/__init__.py" -Encoding utf8
+          "        try: os.add_dll_directory(lib_path)" | Add-Content -Path "meta_rig_logic/__init__.py" -Encoding utf8
+          "        except: pass" | Add-Content -Path "meta_rig_logic/__init__.py" -Encoding utf8
+          "    paths_to_add = [current_dir, lib_path]" | Add-Content -Path "meta_rig_logic/__init__.py" -Encoding utf8
+          "    for p in paths_to_add:" | Add-Content -Path "meta_rig_logic/__init__.py" -Encoding utf8
+          "        if p not in sys.path: sys.path.insert(0, p)" | Add-Content -Path "meta_rig_logic/__init__.py" -Encoding utf8
+          "    print(`"[-] MetaRigLogic Runtime Modules successfully system-linked.`")" | Add-Content -Path "meta_rig_logic/__init__.py" -Encoding utf8
+          "def unregister():" | Add-Content -Path "meta_rig_logic/__init__.py" -Encoding utf8
+          "    pass" | Add-Content -Path "meta_rig_logic/__init__.py" -Encoding utf8
+
+      # [수정] 압축 파일명 및 아티팩트 명칭을 blender4.2 버전 기준으로 변경
+      - name: Zip Addon Package (Strict Flat Structure)
+        shell: powershell
+        run: |
+          Compress-Archive -Path "meta_rig_logic" -DestinationPath "meta_rig_logic_blender4.2_package.zip" -Force
+
+      - name: Upload Addon Bundle Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MetaRigLogic-Blender4.2-Addon
+          path: meta_rig_logic_blender4.2_package.zip
