@@ -50,15 +50,17 @@ jobs:
         run: |
           cmake --build build --config Release --parallel 4
 
-      # [최종 보완] 윈도우 파워쉘의 카피 유실 결함을 막기 위해 내장 파이썬 os.walk 전수 징집 엔진을 트리거합니다.
-      # 이 단계를 거치면 빌드 트리 깊은 곳에 생성된 7개의 파일이 100% 무조건 집결합니다.
+      # [인코딩 버그 해결] 에러를 유발하던 이모지 \u2713와 한글 로그를 표준 영문(ASCII)으로 전면 교체했습니다.
       - name: Gather All MetaHuman Libraries via Python Script
         shell: python
         run: |
           import os
           import shutil
+          import sys
 
-          # 수집 타겟 디렉토리 강제 보장 생성
+          # 출력 스트림 인코딩 방어책 강제 지정
+          sys.stdout.reconfigure(encoding='utf-8')
+
           target_lib = os.path.abspath("meta_rig_logic/lib")
           os.makedirs(target_lib, exist_ok=True)
           
@@ -66,30 +68,26 @@ jobs:
           print(f"[*] Scanning for compiled MetaHuman elements in: {build_root}")
           
           collected_count = 0
-          # build 폴더의 모든 하위 깊이 트리까지 정밀 스캔
           for root, dirs, files in os.walk(build_root):
               for file in files:
-                  ext = os.path.splitext(file)[1].lower()
-                  # 필요한 확장자 전수 타겟 필터링
+                  ext = os.path.splitext(file).lower()
                   if ext in ['.pyd', '.dll', '.py']:
-                      # 불필요한 내부 캐시 파일 스킵 예외 처리
                       if "ctest" in file.lower() or "bwrap" in file.lower():
                           continue
                           
                       src_file_path = os.path.join(root, file)
                       dest_file_path = os.path.join(target_lib, file)
                       
-                      # 파일 수집 이동 복사
                       shutil.copy2(src_file_path, dest_file_path)
-                      print(f"[✓] Collected: {file} from {root}")
+                      # [수정] 이모지 제거 및 ASCII 포맷으로 윈도우 인코딩 크래시 방지
+                      print(f"[SUCCESS] Collected: {file}")
                       collected_count += 1
                       
-          print(f"[*] 완벽 징집 완료: 총 {collected_count}개의 핵심 자산 수집됨.")
+          print(f"[*] Gathering done. Total files collected: {collected_count}")
 
       - name: Generate Addon Manifest and Init
         shell: powershell
         run: |
-          # 블렌더 5.1에서 애드온을 원클릭으로 정식 인식시키기 위한 확장 매니페스트 배치
           "schema_version = `"1.0.0`"" | Set-Content -Path "meta_rig_logic/blender_manifest.toml" -Encoding utf8
           "id = `"meta_rig_logic`"" | Add-Content -Path "meta_rig_logic/blender_manifest.toml" -Encoding utf8
           "version = `"1.0.0`"" | Add-Content -Path "meta_rig_logic/blender_manifest.toml" -Encoding utf8
@@ -103,7 +101,6 @@ jobs:
           "`n[platforms]" | Add-Content -Path "meta_rig_logic/blender_manifest.toml" -Encoding utf8
           "windows-x64 = `"*`"" | Add-Content -Path "meta_rig_logic/blender_manifest.toml" -Encoding utf8
 
-          # 블렌더 전용 애드온 초기화 파일인 __init__.py 안전하게 작성
           "import sys, os" | Set-Content -Path "meta_rig_logic/__init__.py" -Encoding utf8
           "def register():" | Add-Content -Path "meta_rig_logic/__init__.py" -Encoding utf8
           "    current_dir = os.path.dirname(__file__)" | Add-Content -Path "meta_rig_logic/__init__.py" -Encoding utf8
