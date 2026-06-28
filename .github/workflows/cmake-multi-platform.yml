@@ -34,8 +34,8 @@ jobs:
         run: |
           $pythonDir = Split-Path (Get-Command python).Source
           
-          # [핵심 수정] -DRL_BUILD_PYTHON_WRAPPER=ON 으로 변경하여 SWIG 연동을 강제 활성화합니다.
-          # [보안 매크로] 파이썬 3.13에서 사멸한 구형 스레드 함수 문제를 차단하는 전역 플래그를 주입합니다.
+          # -DRL_BUILD_PYTHON_WRAPPER=ON 으로 변경하여 SWIG 연동을 강제 활성화합니다.
+          # 파이썬 3.13 환경 매칭용 전역 매크로 플래그 주입
           cmake -B build `
             -DCMAKE_BUILD_TYPE=Release `
             -DRL_BUILD_PYTHON_WRAPPER=ON `
@@ -52,9 +52,7 @@ jobs:
         run: |
           cmake --build build --config Release --parallel 4
 
-      # [가장 중요] 파편화된 모든 .pyd, .dll, .py 파일을 단 하나의 'lib' 폴더로 누락 없이 전수 징집합니다.
-      # 이 안전 수집 공정이 있어야만 빌드 트리 깊숙이 숨은 기계어 파일이 유실되지 않습니다.
-       malice 프리 수집 공정 배치
+      # [오류 수정 완료] 깨진 문자열 및 파워쉘 구문 닫힘 에러를 완전히 치료했습니다.
       - name: Gather and Package All MetaHuman Libraries
         shell: powershell
         run: |
@@ -70,14 +68,13 @@ jobs:
           
           # 3. SWIG가 자동 생성한 모든 파이썬 인터페이스 스크립트 (.py) 누락 없이 전수 수집
           Get-ChildItem "build" -Recurse -Filter *.py -ErrorAction SilentlyContinue | ForEach-Object {
-              # 필요 없는 내부 로그 성격의 파이썬 파일 제외 필터링
               if ($_.Name -notlike "*ctest*" -and $_.Name -notlike "*bwrap*") {
                   Copy-Item -Path $_.FullName -Destination "meta_rig_logic/lib/" -Force
                   Write-Host "[✓] Collected Script: $($_.Name)"
               }
           }
 
-          # 4. 블렌더 5.1에서 애드온을 원클릭으로 정식 인식시키기 위한 확장 매니페스트 임시 배치
+          # 4. 블렌더 5.1에서 애드온을 원클릭으로 정식 인식시키기 위한 확장 매니페스트 배치
           $manifest_content = @"
           schema_version = "1.0.0"
           id = "meta_rig_logic"
@@ -94,6 +91,7 @@ jobs:
           [platforms]
           windows-x64 = "*"
           "@
+          
           Set-Content -Path "meta_rig_logic/blender_manifest.toml" -Value $manifest_content -Encoding utf8
 
           # 5. 블렌더 구동 시 lib 안의 파일들을 자동으로 OS 환경에 맵핑해 줄 깔끔한 __init__.py 파일 주입
@@ -115,15 +113,14 @@ jobs:
           def unregister():
               pass
           "@
+          
           Set-Content -Path "meta_rig_logic/__init__.py" -Value $init_content -Encoding utf8
 
-      # 6. 복잡한 깊이의 원인을 격파하고 meta_rig_logic 폴더 단독 다이렉트 루트 구조로 플랫하게 압스크랩화
       - name: Zip Addon Package (Strict Flat Structure)
         shell: powershell
         run: |
           Compress-Archive -Path "meta_rig_logic" -DestinationPath "meta_rig_logic_blender5.1_package.zip" -Force
 
-      # 7. 완성된 원클릭 최종 완성본 배포 패키지 파일 업로드
       - name: Upload Addon Bundle Artifact
         uses: actions/upload-artifact@v4
         with:
